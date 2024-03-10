@@ -113,7 +113,7 @@ class SignatureLoss(torch.nn.Module):
         Learning*, PMLR 119, pp. 7045--7054, 2020.
     """
 
-    def __init__(self, p=2, normalise=True, dimensions=0):
+    def __init__(self, p=2, normalise=True, dimensions=0, directed=True):
         """Create new loss instance.
 
         Parameters
@@ -128,12 +128,18 @@ class SignatureLoss(torch.nn.Module):
         dimensions : int or tuple of int
             Dimensions to use in the signature calculation. Following
             [Moor20a]_, this is set by default to `0`.
+
+        directed : bool
+            If set, calculates the directed distance between the
+            signatures of two point clouds. If not set, calculates the
+            undirected distance.
         """
         super().__init__()
 
         self.p = p
         self.normalise = normalise
         self.dimensions = dimensions
+        self.directed = directed
 
         # Ensure that we can iterate over the dimensions later on, as
         # this simplifies the code.
@@ -193,22 +199,24 @@ class SignatureLoss(torch.nn.Module):
         # Using the topologically relevant edges from point cloud Y,
         # retrieve the corresponding distances from the pairwise
         # distance matrix of X.
-        X_sig_Y = [
-            self._select_distances(
-                X_pairwise_dist, Y_persistence_info[dim].pairing
-            )
-            for dim in self.dimensions
-        ]
+        if self.directed:
+            X_sig_Y = [
+                self._select_distances(
+                    X_pairwise_dist, Y_persistence_info[dim].pairing
+                )
+                for dim in self.dimensions
+            ]
 
         # Using the topologically relevant edges from point cloud X,
         # retrieve the corresponding distances from the pairwise
         # distance matrix of Y.
-        Y_sig_X = [
-            self._select_distances(
-                Y_pairwise_dist, X_persistence_info[dim].pairing
-            )
-            for dim in self.dimensions
-        ]
+        if self.directed:
+            Y_sig_X = [
+                self._select_distances(
+                    Y_pairwise_dist, X_persistence_info[dim].pairing
+                )
+                for dim in self.dimensions
+            ]
 
         # Using the topologically relevant edges from point cloud Y,
         # retrieve the corresponding distances from the pairwise
@@ -220,10 +228,13 @@ class SignatureLoss(torch.nn.Module):
             for dim in self.dimensions
         ]
 
-        XY_dist = self._partial_distance(X_sig_X, Y_sig_X)
-        YX_dist = self._partial_distance(Y_sig_Y, X_sig_Y)
-
-        return torch.stack(XY_dist).sum() + torch.stack(YX_dist).sum()
+        if self.directed:
+            XY_dist = self._partial_distance(X_sig_X, Y_sig_X)
+            YX_dist = self._partial_distance(Y_sig_Y, X_sig_Y)
+            return torch.stack(XY_dist).sum() + torch.stack(YX_dist).sum()
+        else:
+            XY_dist = self._partial_distance(X_sig_X, Y_sig_Y)
+            return torch.stack(XY_dist).sum()
 
     def _select_distances(self, pairwise_distance_matrix, generators):
         """Select topologically relevant edges from a pairwise distance matrix.
